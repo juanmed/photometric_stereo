@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib import cm
 
-def get_Rb(normal, light, q):
+def get_Ra(normal, light, q):
 	"""
 	Idealized model for prefectly diffuse (lambertian) surface 
 	which is equally bright from all viewing directions
@@ -25,7 +25,7 @@ def get_Rb(normal, light, q):
 	#a = a/np.linalg.norm(light)
 	return a
 
-def get_Ra(normal, light, q):
+def get_Rb(normal, light, q):
 	"""
 	Idealized model for prefectly diffuse (lambertian) surface 
 	which reflects equal amounts of light in all directions.
@@ -43,7 +43,7 @@ def get_Ra(normal, light, q):
 
 if __name__ == '__main__':
 	# scene quantities
-	light = np.array([5, 0., -1])
+	light = np.array([0.7, 0.3, -1])
 	qf = 1. # reflectance factor
 
 	# object gradients and normals
@@ -78,6 +78,11 @@ if __name__ == '__main__':
 	#print(point_vectors)
 	x,y,z,u,v,w = zip(*point_vectors)
 	ax.quiver(x,y,z,u,v,w, pivot = "tail", color='b', arrow_length_ratio=0.3)
+
+
+	Ra_contours = np.arange(np.min(Ra),np.max(Ra), (np.max(Ra)- np.min(Ra)) / 10)
+	Ra_min_draw = np.min(Ra) - 4
+	cset = ax.contour(p, q, Ra, zdir='z', offset=Ra_min_draw, cmap=cm.coolwarm, levels = Ra_contours)
 
 
 	plt.show()
