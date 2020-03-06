@@ -8,6 +8,7 @@ Assuming ortographic projection: x=p, y=q
 
 import os
 import numpy as np
+import random
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib import cm
@@ -42,7 +43,7 @@ def draw_contours(x,y,z,ax,cm):
 	ax.contour(x, y, z, zdir='z', offset=z_min_draw, cmap=cm, levels = z_contours)
 	#return ax
  
-def reconstruct_normals_3lights(imgs, lights):
+def reconstruct_normals_3lights(imgs, lights, spacing = 1):
 	"""
 	imgs: nxnx3 matriz with n the size of images stacked in depth
 	lights: 3x3 matrix of unitary incident light vectors
@@ -50,11 +51,14 @@ def reconstruct_normals_3lights(imgs, lights):
 	linv = np.linalg.inv(lights)
 	#linvs = np.full((16,16,3,3),linv)
 	normals = np.zeros((imgs.shape[0],imgs.shape[1],3))
+	albedo = np.zeros((imgs.shape[0],imgs.shape[1]))
 	#normals[:,:] = np.dot(linvs,imgs)
-	for i in range(imgs.shape[0]):
-		for j in range(imgs.shape[1]):
+	for i in range(0,imgs.shape[0],spacing):
+		for j in range(0,imgs.shape[1],spacing):
 			normals[i,j] = np.dot(linv,imgs[i,j])
-	return normals
+			albedo[i,j] = np.linalg.norm(normals[i,j])
+			normals[i,j] = normals[i,j]/albedo[i,j]
+	return normals,albedo
 
 def reconstruct_normals_nlights(imgs, lights):
 	"""
@@ -65,17 +69,146 @@ def reconstruct_normals_nlights(imgs, lights):
 	#print(linv)
 	#linvs = np.full((16,16,3,3),linv)
 	normals = np.zeros((imgs.shape[0],imgs.shape[1],3))
+	albedo = np.zeros((imgs.shape[0],imgs.shape[1]))
+
 	#normals[:,:] = np.dot(linvs,imgs)
 	for i in range(imgs.shape[0]):
 		for j in range(imgs.shape[1]):
 			normals[i,j] = np.dot(linv,imgs[i,j])
-	return normals
+			albedo[i,j] = np.linalg.norm(normals[i,j])
+			normals[i,j] = normals[i,j]/albedo[i,j]
+	return normals, albedo
 
 def normalize(v):
     norm = np.linalg.norm(v)
     if norm == 0: 
        return v
     return v / norm
+
+def getSurface(normals,method = 0):
+
+	normal_x = normals[:,:,0]
+	normal_y = normals[:,:,1]
+	normal_z = normals[:,:,2]
+
+	x_derivative = normal_x/normal_z
+	y_derivative = normal_y/normal_z
+
+	output = np.zeros(normals.shape[0:2])
+	if method == 0:
+		# columns first
+		output = np.cumsum(x_derivative,axis=0)
+		output = output + np.cumsum(y_derivative,axis=1) 
+		return output
+	elif method == 1:
+		# rows first
+		pass
+	elif method == 2:
+		# average
+		pass
+	else:
+		return output
+
+def get_surface(surface_normals, integration_method):
+    """
+    Inputs:
+        surface_normals:h x w x 3
+        integration_method: string in ['average', 'column', 'row', 'random']
+    Outputs:
+        height_map: h x w
+    """
+    imx = surface_normals.shape[1]
+    imy = surface_normals.shape[0] #flipped for indexing
+    #height_map = np.zeros((imx,imy)
+    fx = surface_normals[:,:,0] / surface_normals[:,:,2]
+    fy = surface_normals[:,:,1] / surface_normals[:,:,2]
+    fy = np.nan_to_num(fy)
+    fx = np.nan_to_num(fx)
+    row = np.cumsum(fx,axis=1)
+    column = np.cumsum(fy,axis=0)
+    if integration_method == 'row':
+        row_temp = np.vstack([row[0,:]]*imy)
+        height_map = column + row_temp     
+        #print(np.max(height_map))
+    elif integration_method == 'column':
+        col_temp = np.stack([column[:,0].T]*imx,axis=1)
+        height_map = row + col_temp   
+        #print(height_map.T)
+    elif integration_method == 'average':
+        row_temp = np.vstack([row[0,:]]*imy)
+        col_temp = np.stack([column[:,0].T]*imx,axis=1)
+        height_map = (row + column + row_temp + col_temp) / 2
+        
+    elif integration_method == 'random':
+        iteration = 10
+        height_map = np.zeros((imy,imx))
+        for x in range(iteration):
+            print(x)
+            for i in range(imy):
+                print(i)
+                for j in range(imx):
+                    id1 = 0
+                    id2 = 0
+                    val = 0
+                    path = [0] * i + [1] * j
+                    random.shuffle(path)
+                    for move in path:
+                        if move == 0:
+                            id1 += 1
+                            if id1 > imy - 1: id1 -= 1
+                            val += fy[id1][id2]
+                            #print(val,fx[id1][id2])
+                        if move == 1:
+                            id2 += 1
+                            if id2 > imx - 1: id2 -= 1
+                            val += fx[id1][id2]
+                    height_map[i][j] += val
+                    #print(i,j,val)
+        height_map = height_map / iteration
+        #print(np.max(height_map))
+    else:
+    	pass
+    # print(height_map)
+    return height_map
+
+def find_surface(N, size, h_map, K = 2000, p = False):
+    h, w = size
+    ret = h_map
+    fx = N[:,:,0] / N[:,:,2]
+    fx = np.nan_to_num(fx)
+    fy = N[:,:,1] / N[:,:,2]
+    fy = np.nan_to_num(fy)
+    fxp = np.roll(fx,1,axis = 1)
+    fxp[:,0] = 0
+    deriv_x = fxp - fx
+    fyp = np.roll(fy,1,axis = 0)
+    fyp[0,:] = 0
+    deriv_y = fyp - fy
+
+    for i in range(K):
+        dx = 1
+        if p:
+            dx = (-15.0 / 49.0) * i + 16
+        dy = dx
+        left = np.roll(ret,1,axis=1)
+        left[:,0] = 0
+        right = np.roll(ret,-1,axis=1)
+        right[:,-1] = 0
+        up = np.roll(ret,1,axis=0)
+        up[0,:] = 0
+        down = np.roll(ret,-1,axis=0)
+        down[-1,:] = 0
+        neighbor = 1/4 * (up + left + right + down)
+        deriv = 1/4 * (deriv_x * dx + deriv_y * dy)
+        ret = neighbor + deriv
+
+    return ret
+
+def threshold(h_map):
+    h_map += abs(np.min(h_map))
+    # h_map /= np.max(h_map)
+    h_map[h_map < np.max(h_map) * 0.6] = np.max(h_map) * 0.6
+    return h_map 
 
 if __name__ == '__main__':
 	
@@ -170,7 +303,7 @@ if __name__ == '__main__':
 	# reconstruct normals using 3 images and lights
 	imgs = np.dstack((im1,im2,im3))
 	lights = np.vstack((normalize(light1), normalize(light2), normalize(light3)))
-	surf_normals = reconstruct_normals_3lights(imgs,lights)
+	surf_normals, albedo = reconstruct_normals_3lights(imgs,lights)
 	norm = np.linalg.norm(surf_normals,axis=2)
 	norm = np.dstack((norm, norm, norm))
 	normals_normalized = np.divide(surf_normals,norm)
