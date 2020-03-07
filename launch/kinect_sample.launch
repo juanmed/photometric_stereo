@@ -1,0 +1,7 @@
+<launch>
+	<node name="sampler" type="sample_kinect.py" pkg="photometric_stereo" output="screen">
+		<remap to="/kinect2/hd/image_color_rect" from="/image"/>
+		<remap to="/kinect2/hd/image_depth_rect" from="/depth"/>
+		<remap to="/kinect2/hd/camera_info" from="/camera_info"/>
+	</node>
+</launch>
